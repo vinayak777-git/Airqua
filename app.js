@@ -10,6 +10,7 @@
 
   let currentRange = "24h";
   let latestSnapshot = null;
+  let agentConfigured = false;
   const charts = {};
 
   const ACK_KEY = "airqua_acknowledged_signals";
@@ -210,23 +211,111 @@
   }
 
   function applyInsights(data) {
-    document.getElementById("confidence-val").textContent = (data.confidence || 0) + "%";
-    document.getElementById("confidence-fill").style.width = (data.confidence || 0) + "%";
+    document.getElementById("confidence-val").textContent = data.aiPowered ? (data.confidence || 0) + "%" : "—";
+    document.getElementById("confidence-fill").style.width = data.aiPowered ? (data.confidence || 0) + "%" : "0%";
+    document.getElementById("confidence-label").textContent = data.aiPowered
+      ? "Model-reported estimate · uncalibrated"
+      : "Confidence unavailable for rule output";
     document.getElementById("insights-headline").textContent = data.headline || "—";
 
     const list = document.getElementById("signals-list");
-    list.innerHTML = (data.signals || []).map((s) => `
-      <li>
-        <span class="dot ${s.severity}"></span>
-        <div>
-          <div class="signal-title">${s.title}</div>
-          <div class="signal-detail">${s.detail}</div>
-        </div>
-      </li>
-    `).join("");
+    list.replaceChildren();
+    (data.signals || []).forEach((signal) => {
+      const item = document.createElement("li");
+      const dot = document.createElement("span");
+      dot.className = "dot " + (signal.severity || "normal");
+      const content = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "signal-title";
+      title.textContent = signal.title || "Signal";
+      const detail = document.createElement("div");
+      detail.className = "signal-detail";
+      detail.textContent = signal.detail || "";
+      content.append(title, detail);
+      item.append(dot, content);
+      list.append(item);
+    });
 
     document.getElementById("insights-time").textContent =
-      (data.aiPowered ? "Claude-powered · " : "Rule-based fallback · ") + "just now";
+      (data.aiPowered ? `${data.provider} · ${data.model} · ` : "Rule-based fallback · ") + "just now";
+  }
+
+  function appendAgentEntry(role, text, snapshot) {
+    const thread = document.getElementById("agent-thread");
+    thread.querySelector(".agent-empty")?.remove();
+
+    const entry = document.createElement("article");
+    entry.className = `agent-entry ${role}`;
+    const label = document.createElement("div");
+    label.className = "agent-entry-label";
+    label.textContent = role === "user" ? "YOU" : "AIRQUA AI · ADVISORY";
+    const body = document.createElement("p");
+    body.textContent = text;
+    entry.append(label, body);
+
+    if (snapshot) {
+      const context = document.createElement("p");
+      context.className = "agent-context";
+      context.textContent = `Supplied demo readings · ${fmt(snapshot.temperature, 1)} °C · pH ${fmt(snapshot.ph, 2)} · ${fmt(snapshot.co2, 0)} ppm CO₂ · algae index ${fmt(snapshot.algaeHealth, 1)}%`;
+      entry.append(context);
+    }
+
+    thread.append(entry);
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  async function loadAgentStatus() {
+    const statusEl = document.getElementById("agent-provider-status");
+    const submit = document.getElementById("agent-submit");
+    try {
+      const response = await fetch("/api/ai/status");
+      const status = await response.json();
+      agentConfigured = Boolean(status.configured && status.agentMode);
+      if (!agentConfigured) {
+        statusEl.textContent = "Agent mode unavailable · configure Ollama or another supported provider.";
+        submit.disabled = true;
+        return;
+      }
+      statusEl.textContent = `Configured provider · ${status.provider} / ${status.model}`;
+      submit.disabled = false;
+    } catch (error) {
+      statusEl.textContent = "Could not read AI provider configuration.";
+      submit.disabled = true;
+    }
+  }
+
+  async function askAgent(event) {
+    event.preventDefault();
+    const input = document.getElementById("agent-question");
+    const submit = document.getElementById("agent-submit");
+    const statusEl = document.getElementById("agent-provider-status");
+    const question = input.value.trim();
+    if (!question || question.length > 1200) return;
+
+    appendAgentEntry("user", question);
+    input.value = "";
+    input.disabled = true;
+    submit.disabled = true;
+    statusEl.textContent = "Waiting for the configured model…";
+
+    try {
+      const response = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "The AI request failed.");
+      appendAgentEntry("assistant", result.answer, result.snapshot);
+      statusEl.textContent = `Advisory response · ${result.provider} / ${result.model} · demo context`;
+    } catch (error) {
+      appendAgentEntry("assistant", error.message || "The AI request failed.");
+      statusEl.textContent = "AI request unavailable. Check provider status and try again.";
+    } finally {
+      input.disabled = false;
+      submit.disabled = !agentConfigured;
+      input.focus();
+    }
   }
 
   // ---------------- report ----------------
@@ -262,6 +351,7 @@
   });
 
   document.getElementById("report-btn").addEventListener("click", openReport);
+  document.getElementById("agent-form").addEventListener("submit", askAgent);
 
   document.querySelectorAll(".range-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -276,6 +366,7 @@
   pollCurrent();
   loadHistory(currentRange);
   loadInsights();
+  loadAgentStatus();
 
   setInterval(pollCurrent, 5000);
   setInterval(() => loadHistory(currentRange), 30000);

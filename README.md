@@ -1,22 +1,23 @@
 # AIRQUA Telemetry Console
 
-Full Node.js + Express + MongoDB backend and frontend matching the console
-design: live metric cards, 24h/7d environmental trend charts, a Claude-powered
-"What we're seeing" insights panel with a confidence score, and a local
-attention/acknowledge queue.
+AIRQUA is an Express telemetry demo with a browser dashboard, MongoDB history,
+and a provider-based AI pipeline. Ollama is the default local model provider;
+insights fall back to deterministic rules if the model is unavailable. Agent
+mode is advisory only and receives explicitly labeled simulated data.
 
 ## What's inside
 
 ```
 airqua-console/
-├── server.js            Express app: simulated telemetry, Mongo persistence, insights
-├── models/Reading.js    Mongoose schema for a sensor reading
+├── server.js            Express app and telemetry API
+├── Reading.js           Mongoose schema for a sensor reading
+├── providers/           Ollama and optional Anthropic adapters
+├── services/            AI pipeline, response validation, rule fallback
 ├── package.json
-├── .env.example         MONGODB_URI, ANTHROPIC_API_KEY, PORT
-└── public/
-    ├── index.html        console markup
-    ├── styles.css        dark telemetry theme
-    └── app.js            polling, Chart.js trends, insights, attention queue
+├── .env.example         database and AI provider settings
+├── index.html            console markup
+├── styles.css            telemetry theme and responsive assistant
+└── app.js                polling, charts, insights, agent chat
 ```
 
 ## Run it
@@ -26,14 +27,23 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env`:
-- `MONGODB_URI` — a local Mongo (`mongodb://127.0.0.1:27017/airqua`) or an Atlas
-  connection string. If this is missing/unreachable, the console still runs —
-  current readings and AI insights keep working, only historical charts and
-  the "MongoDB persisted" note will show it's running in-memory only.
-- `ANTHROPIC_API_KEY` — for real Claude-generated insights. Without it, the
-  insights panel automatically uses a rule-based fallback (still functional,
-  just labeled "Rule-based fallback" in the UI instead of "Claude-powered").
+Edit `.env` to select a provider. For local Ollama, install Ollama, start its
+service, then fetch a model:
+
+```bash
+ollama pull llama3.2:3b
+```
+
+The example configuration uses `AI_PROVIDER=ollama`, `OLLAMA_BASE_URL`, and
+`AI_MODEL`. Choose any Ollama chat model that supports JSON mode for structured
+insights. No API key or extra npm package is required for Ollama. To disable
+model calls and use rules only, set `AI_PROVIDER=rules`. To use Anthropic
+instead, set `AI_PROVIDER=anthropic`, set `ANTHROPIC_API_KEY`, and optionally
+override `AI_MODEL`.
+
+MongoDB is optional. If unavailable, the console still serves current simulated
+readings and AI features; historical charts will be empty and the footer will
+show that readings are not persisted.
 
 ```bash
 npm start
@@ -48,9 +58,15 @@ Open **http://localhost:3000**.
 - **Environmental trends** — `GET /api/history?range=24h|7d` reads persisted
   readings from MongoDB, downsampled to ~80 points per chart; the 24h/7d
   toggle just re-requests with a different range.
-- **What we're seeing** — `GET /api/insights` asks Claude for a confidence
-  score, one-sentence headline, and one signal per metric (title + detail +
-  severity); falls back to threshold-based text if Claude is unavailable.
+- **What we're seeing** — `GET /api/insights` uses the selected model and
+  validates its structured response. Invalid or unavailable model output uses
+  a deterministic rule-based fallback.
+- **AI agent** — `POST /api/agent` accepts a question up to 1200 characters.
+  Responses are explicitly advisory and include the demo snapshot used as
+  context. This API does not operate hardware.
+- **AI configuration** — `GET /api/ai/status` reports the selected provider,
+  model, and whether agent mode is configured. It does not claim the model
+  server is reachable until a request is made.
 - **Attention queue** — built client-side from the current statuses; anything
   non-normal shows up until acknowledged. Acknowledgment is stored in
   `localStorage` only ("Acknowledge locally on this device" in the UI) — it
@@ -61,7 +77,8 @@ Open **http://localhost:3000**.
 
 ## Wiring in real sensors later
 
-`tick()` in `server.js` generates the simulated values and writes them to
-MongoDB every 5 seconds. Replace its body with your real ESP32 ingestion
-(serial, MQTT, HTTP POST, etc.) and keep writing to the same `current` shape —
-nothing else needs to change.
+`tick()` in `server.js` generates simulated values and persists them every five
+seconds when MongoDB is connected. Replace the simulation with validated ESP32
+ingestion later; keep provider code isolated from ingestion so the same
+advisory pipeline can consume a future sensor-backed snapshot. Current values
+are demo data, not deployed sensor readings.

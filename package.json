@@ -5,7 +5,8 @@
   "description": "AIRQUA telemetry console — live monitoring, trend history, and Claude-powered decision support for an algae bioremediation system",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

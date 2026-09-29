@@ -153,7 +153,7 @@
       </div>
 
       <div class="confidence-row">
-        <span>System confidence</span>
+        <span id="confidence-label">Model-reported estimate · uncalibrated</span>
         <b id="confidence-val">--%</b>
       </div>
       <div class="confidence-bar"><i id="confidence-fill" style="width:0%"></i></div>
@@ -166,6 +166,26 @@
         <span><i class="dot green"></i> prototype model only</span>
         <span id="insights-time">—</span>
       </div>
+    </section>
+
+    <section class="agent-panel">
+      <div class="agent-head">
+        <div>
+          <div class="eyebrow">LOCAL MODEL / ADVISORY ONLY</div>
+          <h2>AIRQUA AI assistant</h2>
+          <p id="agent-provider-status" class="agent-provider-status">Checking provider configuration…</p>
+        </div>
+        <span class="demo-badge">DEMO DATA</span>
+      </div>
+      <div id="agent-thread" class="agent-thread" aria-live="polite">
+        <p class="agent-empty">Ask about the current demo readings or request help interpreting a trend.</p>
+      </div>
+      <form id="agent-form" class="agent-form">
+        <label class="sr-only" for="agent-question">Ask AIRQUA AI about the demo readings</label>
+        <textarea id="agent-question" rows="2" maxlength="1200" placeholder="Why did the pH status change?" required></textarea>
+        <button id="agent-submit" class="btn-outline" type="submit">Ask AI <span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="agent-disclaimer">Responses are model-generated guidance based on simulated readings. They do not control equipment or replace scientific review.</p>
     </section>
 
     <section class="attention-panel">

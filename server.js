@@ -2,20 +2,40 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const mongoose = require("mongoose");
-const Anthropic = require("@anthropic-ai/sdk");
 const Reading = require("./Reading");
+const { createOllamaProvider } = require("./providers/ollama");
+const { createAnthropicProvider } = require("./providers/anthropic");
+const { createAiPipeline } = require("./services/ai-pipeline");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "site.html")));
+app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get(["/technology", "/solutions", "/ai", "/research", "/about", "/contact"], (req, res) => {
+  res.sendFile(path.join(__dirname, "site.html"));
+});
 app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 3000;
-const MODEL = "claude-sonnet-5";
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/airqua";
+const AI_PROVIDER = (process.env.AI_PROVIDER || "ollama").toLowerCase();
+const DEFAULT_MODEL = AI_PROVIDER === "anthropic" ? "claude-3-5-haiku-latest" : AI_PROVIDER === "ollama" ? "llama3.2:3b" : "rules";
+const AI_MODEL = process.env.AI_MODEL || DEFAULT_MODEL;
+let aiProvider = null;
 
-const anthropic = process.env.ANTHROPIC_API_KEY
-  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  : null;
+if (AI_PROVIDER === "ollama") {
+  aiProvider = createOllamaProvider({
+    baseUrl: process.env.OLLAMA_BASE_URL,
+    model: AI_MODEL,
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS) || 45000,
+  });
+} else if (AI_PROVIDER === "anthropic" && process.env.ANTHROPIC_API_KEY) {
+  aiProvider = createAnthropicProvider({ apiKey: process.env.ANTHROPIC_API_KEY, model: AI_MODEL });
+} else if (AI_PROVIDER !== "rules") {
+  console.warn(`[AIRQUA] AI provider "${AI_PROVIDER}" is unavailable or not configured; using rules.`);
+}
+
+const aiPipeline = createAiPipeline({ provider: aiProvider, providerName: AI_PROVIDER, model: AI_MODEL });
 
 // ---------------------------------------------------------------------------
 // Simulated telemetry (no physical sensors deployed yet — ESP32 + DS18B20 +
@@ -54,6 +74,18 @@ function statuses() {
 function overallStatus(st) {
   const order = { alert: 2, watch: 1, normal: 0 };
   return Object.values(st).reduce((worst, s) => (order[s] > order[worst] ? s : worst), "normal");
+}
+
+function getSnapshot() {
+  const readings = { ...current };
+  const readingStatuses = statuses();
+  return {
+    current: readings,
+    statuses: readingStatuses,
+    overall: overallStatus(readingStatuses),
+    lastUpdated,
+    dataSource: "demo",
+  };
 }
 
 async function tick() {
@@ -96,8 +128,7 @@ async function tick() {
 // ---------------------------------------------------------------------------
 
 app.get("/api/current", (req, res) => {
-  const st = statuses();
-  res.json({ current, statuses: st, overall: overallStatus(st), lastUpdated, dbConnected: dbReady });
+  res.json({ ...getSnapshot(), dbConnected: dbReady });
 });
 
 app.get("/api/history", async (req, res) => {
@@ -119,77 +150,30 @@ app.get("/api/history", async (req, res) => {
   }
 });
 
-app.get("/api/insights", async (req, res) => {
-  const st = statuses();
-  const overall = overallStatus(st);
-
-  if (anthropic) {
-    try {
-      const result = await claudeInsights(st, overall);
-      return res.json({ ok: true, aiPowered: true, ...result });
-    } catch (err) {
-      console.error("[AIRQUA] Claude insights failed, using fallback:", err.message);
-    }
-  }
-  res.json({ ok: true, aiPowered: false, ...ruleBasedInsights(st, overall) });
+app.get("/api/ai/status", (req, res) => {
+  res.json({ ...aiPipeline.status, configured: Boolean(aiProvider), dataSource: "demo" });
 });
 
-async function claudeInsights(st, overall) {
-  const system = `You are the AI decision-support layer inside AIRQUA, an algae bioremediation telemetry console (prototype hardware: ESP32, DS18B20 temperature sensor, potentiometers simulating CO2/pH/algae-health, relays for air/water pumps).
-Given the current readings and their status, respond with ONLY raw JSON, no markdown or commentary, in exactly this shape:
-{"confidence": <int 0-100, how confident the system is in this readout>,
-"headline": "<one short sentence framing what's happening overall, for a non-technical viewer>",
-"signals": [{"title":"<short punchy title, max 6 words>", "detail":"<one sentence with the actual numbers>", "severity":"normal"|"watch"|"alert"}, ... exactly one entry per metric, in this order: temperature, ph, co2, algaeHealth]}`;
+app.get("/api/insights", async (req, res) => {
+  res.json({ ok: true, ...await aiPipeline.insights(getSnapshot()) });
+});
 
-  const userText = `Temperature: ${current.temperature.toFixed(1)}°C (${st.temperature})
-pH: ${current.ph.toFixed(2)} (${st.ph})
-CO2: ${Math.round(current.co2)} ppm (${st.co2})
-Algae Health: ${current.algaeHealth.toFixed(1)}% (${st.algaeHealth})
-Overall status: ${overall}`;
+app.post("/api/agent", async (req, res) => {
+  const question = typeof req.body?.question === "string" ? req.body.question.trim() : "";
+  if (!question || question.length > 1200) {
+    return res.status(400).json({ error: "Enter a question of 1 to 1200 characters." });
+  }
+  if (!aiProvider) {
+    return res.status(503).json({ error: "Agent mode is not configured. Select Ollama or configure a supported provider." });
+  }
 
-  const resp = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 500,
-    system,
-    messages: [{ role: "user", content: userText }],
-  });
-  const text = resp.content.map((b) => b.text || "").join("\n").trim();
-  const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
-  const parsed = JSON.parse(cleaned);
-  if (!parsed.signals || !parsed.signals.length) throw new Error("Malformed insights payload");
-  return parsed;
-}
-
-function ruleBasedInsights(st, overall) {
-  const signals = Object.entries(st).map(([metric, status]) => {
-    let title, detail;
-    if (metric === "temperature") {
-      title = status === "normal" ? "Thermal profile is steady" : status === "watch" ? "Thermal profile needs a look" : "Thermal profile is out of range";
-      detail = `Temperature is holding at ${current.temperature.toFixed(1)}°C.`;
-    } else if (metric === "ph") {
-      title = status === "normal" ? "pH remains balanced" : status === "watch" ? "pH is drifting" : "pH is out of range";
-      detail = `Current reading is ${current.ph.toFixed(2)}.`;
-    } else if (metric === "co2") {
-      title = status === "normal" ? "CO2 is stable" : "CO2 is being monitored";
-      detail = `CO2 is at ${Math.round(current.co2)} ppm; ventilation headroom is ${Math.max(0, Math.round(METRICS.co2.watch[1] - current.co2))} ppm.`;
-    } else {
-      title = status === "normal" ? "Algae vitality is healthy" : "Algae vitality needs attention";
-      detail = `Health index is ${current.algaeHealth.toFixed(1)}%, ${status === "normal" ? "above" : "near or below"} the ${METRICS.algaeHealth.normal[0]}% watch threshold.`;
-    }
-    return { title, detail, severity: status };
-  });
-
-  const confidence =
-    overall === "normal" ? 90 + Math.round(Math.random() * 8) :
-    overall === "watch" ? 70 + Math.round(Math.random() * 15) :
-    40 + Math.round(Math.random() * 20);
-
-  return {
-    confidence,
-    headline: overall === "normal" ? "All signals look steady." : "One or more signals deserve a closer look during the next review.",
-    signals,
-  };
-}
+  try {
+    res.json({ ok: true, ...await aiPipeline.ask(question, getSnapshot()) });
+  } catch (error) {
+    console.error(`[AIRQUA] ${AI_PROVIDER} agent request failed:`, error.message);
+    res.status(502).json({ error: "The AI provider could not complete the request. Check its availability and model configuration." });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -209,7 +193,9 @@ setInterval(tick, 5000);
 
 app.listen(PORT, () => {
   console.log(`AIRQUA telemetry console running at http://localhost:${PORT}`);
-  if (!anthropic) {
-    console.log("[AIRQUA] No ANTHROPIC_API_KEY set — insights will use the rule-based fallback.");
+  if (!aiProvider) {
+    console.log(`[AIRQUA] AI provider ${AI_PROVIDER} is not configured — using the rule-based fallback.`);
+  } else {
+    console.log(`[AIRQUA] AI provider configured: ${AI_PROVIDER} / ${AI_MODEL}`);
   }
 });
