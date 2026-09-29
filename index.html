@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIRQUA — Telemetry Console</title>
+<link rel="stylesheet" href="/styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="bg-glow"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">◍</span>
+      <div>
+        <div class="brand-name">AIRQUA</div>
+        <div class="brand-sub">Intelligent Biology. Cleaner Water. Better Air</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn-outline" id="report-btn">⌁ Report</button>
+      <button class="icon-btn" id="refresh-btn" title="Refresh now">⟳</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="hero">
+      <div class="eyebrow">— LIVE MONITORING / NORTH BASIN</div>
+      <h1>AIRQUA</h1>
+      <p class="tagline">Intelligent Biology. Cleaner Water. Better Air.</p>
+
+      <div class="snapshot-row">
+        <div class="avatar">AQ</div>
+        <div class="waveform" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div class="snapshot-text">Last valid snapshot <b id="snapshot-time">—</b></div>
+        <button id="snapshot-toggle" class="chevron-btn" aria-label="Show snapshot detail">⌄</button>
+      </div>
+      <div id="snapshot-dropdown" class="snapshot-dropdown hidden"></div>
+    </section>
+
+    <section class="metrics-grid">
+      <article class="metric-card" data-metric="temperature" style="--accent:#5be89a;--accent-bg:rgba(91,232,154,0.12)">
+        <div class="metric-top">
+          <span class="metric-icon">🌡</span>
+          <span class="status-pill" data-role="status">● Normal</span>
+        </div>
+        <div class="metric-label">Temperature</div>
+        <div class="metric-value"><span data-role="value">--</span><small>°C</small></div>
+        <div class="metric-foot">
+          <span>Water temperature</span>
+          <span class="wave-icon">∿</span>
+        </div>
+      </article>
+
+      <article class="metric-card" data-metric="ph" style="--accent:#4fd3e0;--accent-bg:rgba(79,211,224,0.12)">
+        <div class="metric-top">
+          <span class="metric-icon">💧</span>
+          <span class="status-pill" data-role="status">● Normal</span>
+        </div>
+        <div class="metric-label">pH balance</div>
+        <div class="metric-value"><span data-role="value">--</span><small>pH</small></div>
+        <div class="metric-foot">
+          <span>Acidity level</span>
+          <span class="wave-icon">∿</span>
+        </div>
+      </article>
+
+      <article class="metric-card" data-metric="co2" style="--accent:#e8b355;--accent-bg:rgba(232,179,85,0.12)">
+        <div class="metric-top">
+          <span class="metric-icon">🌬</span>
+          <span class="status-pill" data-role="status">● Watch</span>
+        </div>
+        <div class="metric-label">CO₂ concentration</div>
+        <div class="metric-value"><span data-role="value">--</span><small>ppm</small></div>
+        <div class="metric-foot">
+          <span>Dissolved carbon</span>
+          <span class="wave-icon">∿</span>
+        </div>
+      </article>
+
+      <article class="metric-card" data-metric="algaeHealth" style="--accent:#e85f8a;--accent-bg:rgba(232,95,138,0.12)">
+        <div class="metric-top">
+          <span class="metric-icon">🌿</span>
+          <span class="status-pill" data-role="status">● Watch</span>
+        </div>
+        <div class="metric-label">Algae health</div>
+        <div class="metric-value"><span data-role="value">--</span><small>%</small></div>
+        <div class="metric-foot">
+          <span>Vitality index</span>
+          <span class="wave-icon">∿</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="trends-panel">
+      <div class="trends-head">
+        <div>
+          <div class="eyebrow">Signal history / live map</div>
+          <h2>Environmental trends</h2>
+        </div>
+        <div class="range-toggle">
+          <button class="range-btn active" data-range="24h">24 hours</button>
+          <button class="range-btn" data-range="7d">7 days</button>
+        </div>
+      </div>
+
+      <div class="stat-chips">
+        <div class="chip"><b id="chip-temp">--</b> temperature</div>
+        <div class="chip"><b id="chip-ph">--</b> pH balance</div>
+        <div class="chip"><b id="chip-co2">--</b> CO₂ ppm</div>
+        <div class="chip"><b id="chip-algae">--</b> algae health</div>
+      </div>
+
+      <div class="legend">
+        <span><i style="background:#5be89a"></i> Temperature</span>
+        <span><i style="background:#4fd3e0"></i> pH balance</span>
+        <span><i style="background:#e8b355"></i> CO₂ concentration</span>
+        <span><i style="background:#e85f8a"></i> Algae health</span>
+      </div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-head"><span>Temperature</span><b id="chart-val-temperature">-- °C</b></div>
+          <canvas id="chart-temperature" height="90"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><span>pH balance</span><b id="chart-val-ph">-- pH</b></div>
+          <canvas id="chart-ph" height="90"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><span>CO₂ concentration</span><b id="chart-val-co2">-- ppm</b></div>
+          <canvas id="chart-co2" height="90"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-head"><span>Algae health</span><b id="chart-val-algaeHealth">-- %</b></div>
+          <canvas id="chart-algaeHealth" height="90"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <section class="insights-panel">
+      <div class="insights-head">
+        <div>
+          <div class="eyebrow">Automated readout / prototype model</div>
+          <h2>What we're seeing</h2>
+        </div>
+        <span class="bolt-icon">⚡</span>
+      </div>
+
+      <div class="confidence-row">
+        <span>System confidence</span>
+        <b id="confidence-val">--%</b>
+      </div>
+      <div class="confidence-bar"><i id="confidence-fill" style="width:0%"></i></div>
+
+      <p id="insights-headline">Loading the latest readout…</p>
+
+      <ul id="signals-list" class="signals-list"></ul>
+
+      <div class="insights-foot">
+        <span><i class="dot green"></i> prototype model only</span>
+        <span id="insights-time">—</span>
+      </div>
+    </section>
+
+    <section class="attention-panel">
+      <div class="attention-head">
+        <div>
+          <div class="eyebrow">Attention queue</div>
+          <h2>Signals to review <span id="attention-count" class="count-badge">0</span></h2>
+        </div>
+        <span class="hint">Acknowledge locally on this device</span>
+      </div>
+      <div id="attention-list"></div>
+    </section>
+  </main>
+
+  <footer class="foot-note">
+    <span>AIRQUA / TELEMETRY CONSOLE</span>
+    <span id="db-note">Demo data source · MongoDB persisted</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
