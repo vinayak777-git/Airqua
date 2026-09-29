@@ -9,9 +9,8 @@ const { createAiPipeline } = require("./services/ai-pipeline");
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "site.html")));
-app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get(["/technology", "/solutions", "/ai", "/research", "/about", "/contact"], (req, res) => {
+app.get("/console", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get(["/", "/dashboard", "/technology", "/solutions", "/ai", "/research", "/about", "/contact"], (req, res) => {
   res.sendFile(path.join(__dirname, "site.html"));
 });
 app.use(express.static(__dirname));
@@ -48,10 +47,12 @@ const METRICS = {
   temperature: { normal: [22, 29], watch: [18, 32], min: 10, max: 40 },
   ph: { normal: [6.8, 7.8], watch: [6.4, 8.2], min: 4, max: 10 },
   co2: { normal: [350, 700], watch: [700, 1000], min: 300, max: 1600 },
+  dissolvedOxygen: { normal: [6.0, 8.5], watch: [4.5, 6.0], min: 2, max: 14 },
+  turbidity: { normal: [8, 18], watch: [18, 30], min: 1, max: 100 },
   algaeHealth: { normal: [70, 100], watch: [40, 70], min: 0, max: 100 },
 };
 
-let current = { temperature: 24.1, ph: 7.72, co2: 742, algaeHealth: 68.4 };
+let current = { temperature: 27.0, ph: 7.20, co2: 420, dissolvedOxygen: 6.8, turbidity: 12.0, algaeHealth: 92.4 };
 let lastUpdated = new Date();
 let anomaly = null;
 let dbReady = false;
@@ -85,6 +86,7 @@ function getSnapshot() {
     overall: overallStatus(readingStatuses),
     lastUpdated,
     dataSource: "demo",
+    dataSourceNotice: "This is only for mock purpose data. Once connection is restored with real-time hardware services, live sensor data will be used.",
   };
 }
 
@@ -92,6 +94,8 @@ async function tick() {
   current.temperature = clamp(current.temperature + (Math.random() - 0.5) * 0.4, METRICS.temperature.min, METRICS.temperature.max);
   current.ph = clamp(current.ph + (Math.random() - 0.5) * 0.05, METRICS.ph.min, METRICS.ph.max);
   current.co2 = clamp(current.co2 + (Math.random() - 0.5) * 20, METRICS.co2.min, METRICS.co2.max);
+  current.dissolvedOxygen = clamp(current.dissolvedOxygen + (Math.random() - 0.5) * 0.1, METRICS.dissolvedOxygen.min, METRICS.dissolvedOxygen.max);
+  current.turbidity = clamp(current.turbidity + (Math.random() - 0.5) * 0.3, METRICS.turbidity.min, METRICS.turbidity.max);
   current.algaeHealth = clamp(current.algaeHealth + (Math.random() - 0.5) * 1.5, METRICS.algaeHealth.min, METRICS.algaeHealth.max);
 
   if (!anomaly && Math.random() < 0.02) {

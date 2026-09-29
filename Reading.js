@@ -5,6 +5,8 @@ const readingSchema = new mongoose.Schema({
   temperature: Number,
   ph: Number,
   co2: Number,
+  dissolvedOxygen: Number,
+  turbidity: Number,
   algaeHealth: Number,
 });
 
